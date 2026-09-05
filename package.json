@@ -1,0 +1,34 @@
+{
+  "name": "friendmap",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/api",
+    "apps/client",
+    "packages/contracts"
+  ],
+  "scripts": {
+    "build": "npm run build:contracts && npm run build:api",
+    "build:contracts": "tsc --project packages/contracts",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:client": "npm run dev --workspace=apps/client",
+    "build:api": "npm run build:contracts && npm run build --workspace=apps/api",
+    "build:client": "npm run build --workspace=apps/client",
+    "test": "npm run test --workspace=apps/api",
+    "db:push": "node node_modules/prisma/build/index.js db push",
+    "db:migrate": "node node_modules/prisma/build/index.js migrate dev",
+    "db:seed": "node node_modules/tsx/dist/cli.mjs prisma/seed.ts",
+    "db:reset": "npx prisma migrate reset --force",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "lodash": "^4.18.1",
+    "prisma": "^5.22.0"
+  }
+}

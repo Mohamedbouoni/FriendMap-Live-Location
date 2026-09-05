@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── User ─────────────────────────────────────────────
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  sentRequests            Friendship[]       @relation("requester")
+  receivedRequests        Friendship[]       @relation("addressee")
+  sharingSettings         SharingSettings?
+  sharingExceptionsOwned  SharingException[] @relation("owner")
+  sharingExceptionsFriend SharingException[] @relation("friend")
+  locationHistory         LocationHistory[]
+}
+
+// ─── Friendship ──────────────────────────────────────
+// One row per user pair. Service layer enforces bidirectional uniqueness
+// by always checking both (A,B) and (B,A) before creating.
+model Friendship {
+  id          String           @id @default(uuid())
+  requesterId String
+  addresseeId String
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  acceptedAt  DateTime?
+
+  requester User @relation("requester", fields: [requesterId], references: [id])
+  addressee User @relation("addressee", fields: [addresseeId], references: [id])
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId])
+  @@index([status])
+}
+
+// ─── Sharing Settings ────────────────────────────────
+// One row per user. Created at registration with GHOST default.
+model SharingSettings {
+  userId String      @id
+  mode   SharingMode @default(GHOST)
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ─── Sharing Exception ──────────────────────────────
+// ALLOW entries used in SELECTED mode, BLOCK entries in EXCEPT mode.
+// friendId must be an accepted friend at write time.
+model SharingException {
+  id       String               @id @default(uuid())
+  ownerId  String
+  friendId String
+  type     SharingExceptionType
+
+  owner  User @relation("owner", fields: [ownerId], references: [id])
+  friend User @relation("friend", fields: [friendId], references: [id])
+
+  @@unique([ownerId, friendId])
+}
+
+// ─── Location History ────────────────────────────────
+// Optional personal history, last 24 hours. Written via batched inserts.
+model LocationHistory {
+  id              String   @id @default(uuid())
+  userId          String
+  latitude        Float
+  longitude       Float
+  accuracy        Float
+  clientTimestamp  DateTime
+  receivedAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, receivedAt])
+}
+
+// ─── Enums ──────────────────────────────────────────
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  REMOVED
+}
+
+enum SharingMode {
+  GHOST
+  EVERYONE
+  SELECTED
+  EXCEPT
+}
+
+enum SharingExceptionType {
+  ALLOW
+  BLOCK
+}

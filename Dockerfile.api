@@ -1,0 +1,52 @@
+# ─── Stage 1: Build ────────────────────────────────────
+FROM node:22-alpine AS builder
+
+RUN apk add --no-cache openssl
+
+WORKDIR /app
+
+# Copy workspace root and package files
+COPY package.json ./
+COPY packages/contracts/package.json ./packages/contracts/
+COPY apps/api/package.json ./apps/api/
+
+# Install all dependencies
+RUN npm install
+
+# Copy source code
+COPY packages/contracts/ ./packages/contracts/
+COPY apps/api/ ./apps/api/
+COPY prisma/ ./prisma/
+COPY prisma.config.ts ./
+COPY .env* ./
+
+# Build contracts
+RUN npx tsc --project packages/contracts
+
+# Generate Prisma client
+RUN npx prisma generate
+RUN cp -r /app/node_modules/.prisma /app/apps/api/node_modules/ 2>/dev/null || true
+
+# Build the API
+RUN npm run build --workspace=apps/api
+
+# ─── Stage 2: Production ──────────────────────────────
+FROM node:22-alpine AS runner
+
+RUN apk add --no-cache dumb-init openssl
+WORKDIR /app
+
+# Copy built artifacts and dependencies
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
+COPY --from=builder /app/packages/contracts ./packages/contracts
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./
+COPY --from=builder /app/package.json ./
+
+EXPOSE 3000
+
+# Run migrations, generate client, seed, then start
+CMD ["dumb-init", "sh", "-c", "npx prisma migrate deploy && npx prisma generate && cp -r /app/node_modules/.prisma /app/apps/api/node_modules/ 2>/dev/null || true && npx prisma db seed && if [ -f apps/api/dist/apps/api/src/main.js ]; then node apps/api/dist/apps/api/src/main.js; else node apps/api/dist/main.js; fi"]
