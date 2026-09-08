@@ -119,54 +119,114 @@ erDiagram
 
 ---
 
-## 🚀 Quick Start (Docker)
+---
 
-To launch the entire platform (PostgreSQL, Redis, NestJS API, and Vue 3 Client with Nginx reverse proxy):
+## 🚀 How to Run the Server
 
-```bash
-docker compose up --build
+You can run FriendMap using one of three methods depending on your environment:
+
+### Method 1: Kubernetes Deployment (Production / Docker Desktop K8s)
+
+Deploy the entire cluster stack (PostgreSQL, Redis, NestJS API, Vue Client with Nginx, and Cloudflare Tunnel):
+
+#### 1. Apply Kubernetes Manifests
+```powershell
+# From the project root:
+kubectl apply -k k8s/
 ```
 
-- **Web Application**: [http://localhost:5173](http://localhost:5173)
-- **API Endpoints**: [http://localhost:3000/api](http://localhost:3000/api)
-- **Health Check**: [http://localhost:3000/health](http://localhost:3000/health)
+> **Windows Note**: If you encounter an error like `Cannot find file at '..\lib\kubernetes-cli\tools\kubernetes\client\bin\kubectl.exe'`, use Docker Desktop's built-in kubectl directly:
+> ```powershell
+> & "C:\Program Files\Docker\Docker\resources\bin\kubectl.exe" apply -k k8s/
+> ```
+> Or permanently alias/add it in PowerShell:
+> ```powershell
+> $env:PATH = "C:\Program Files\Docker\Docker\resources\bin;" + $env:PATH
+> kubectl apply -k k8s/
+> ```
 
-### Demo Seed Users (Password for all: `Password123!`)
+#### 2. Check Running Pods & Services
+```bash
+# View all running pods in the friendmap namespace:
+kubectl get pods -n friendmap
 
-| Username | Email | Initial Privacy Mode | Initial Relationships |
-| :--- | :--- | :--- | :--- |
-| **alice** | `alice@example.com` | `EVERYONE` | Friends with Bob, Charlie, Diana |
-| **bob** | `bob@example.com` | `SELECTED` (Allows Alice only) | Friends with Alice, Charlie |
-| **charlie** | `charlie@example.com` | `EXCEPT` (Blocks David) | Friends with Alice, Bob, Eve |
-| **diana** | `diana@example.com` | `GHOST` | Friends with Alice |
-| **david** | `david@example.com` | `GHOST` | Friends with Alice, Charlie |
-| **eve** | `eve@example.com` | `GHOST` | Friends with Charlie (Pending to Alice) |
+# View services:
+kubectl get svc -n friendmap
+```
+
+#### 3. View Live Logs
+```bash
+# Realtime API logs:
+kubectl logs -f deployment/api -n friendmap
+
+# Client Nginx logs:
+kubectl logs -f deployment/client -n friendmap
+
+# Cloudflare tunnel logs:
+kubectl logs -f deployment/cloudflared -n friendmap
+```
+
+#### 4. Rebuild & Update After Code Changes
+```bash
+# 1. Build new Docker images:
+docker build -t friends-maps-api:latest -f Dockerfile.api .
+docker build -t friends-maps-client:latest -f Dockerfile.client .
+
+# 2. Restart pods to pick up new images:
+kubectl rollout restart deployment/api -n friendmap
+kubectl rollout restart deployment/client -n friendmap
+```
 
 ---
 
-## 🛠️ Local Development (Host Mode)
+### Method 2: Docker Compose (All-in-One Local Containerized Stack)
 
-If you prefer running services directly on your host machine:
+Best for quick local testing without Kubernetes:
 
-### 1. Start Infrastructure
+#### 1. Start all services
+```bash
+docker compose up --build
+```
+Or in detached (background) mode:
+```bash
+docker compose up -d --build
+```
+
+#### 2. Access the Application
+- **Web Client**: [http://localhost:5173](http://localhost:5173)
+- **REST API & Swagger**: [http://localhost:3000/api](http://localhost:3000/api)
+- **API Health Check**: [http://localhost:3000/health](http://localhost:3000/health)
+
+#### 3. Stop services
+```bash
+docker compose down
+```
+
+---
+
+### Method 3: Local Node.js Development (Hot Module Reload)
+
+Best for active code editing on the host machine:
+
+#### 1. Start Database & Redis via Docker
 ```bash
 docker compose up -d postgres redis
 ```
 
-### 2. Install & Generate
+#### 2. Install Dependencies & Setup Database
 ```bash
 npm install
 npx prisma generate
-npx prisma migrate dev
+npm run db:push
 npm run db:seed
 ```
 
-### 3. Start Backend & Frontend
+#### 3. Start Backend & Frontend in Separate Terminals
 ```bash
-# In terminal 1:
+# Terminal 1 — Start NestJS API (Port 3000 with watch mode):
 npm run dev:api
 
-# In terminal 2:
+# Terminal 2 — Start Vue 3 Vite Client (Port 5173 with HMR):
 npm run dev:client
 ```
 
