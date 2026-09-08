@@ -43,7 +43,7 @@ export class SharingService {
       settings = await this.prisma.sharingSettings.create({
         data: {
           userId,
-          mode: SharingMode.GHOST,
+          mode: SharingMode.EVERYONE,
         },
       });
     }

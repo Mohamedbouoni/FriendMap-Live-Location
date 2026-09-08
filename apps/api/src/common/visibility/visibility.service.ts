@@ -24,12 +24,12 @@ export class VisibilityService {
       const friendship = await this.findAcceptedFriendship(viewerId, ownerId);
       if (!friendship) return false;
 
-      // 2. Load owner's SharingSettings
+      // 2. Load owner's SharingSettings (default to EVERYONE if none exist)
       const settings = await this.getSharingSettings(ownerId);
-      if (!settings) return false; // fail closed — no settings means no access
+      const mode = settings?.mode ?? SharingMode.EVERYONE;
 
       // 3. Evaluate mode
-      switch (settings.mode) {
+      switch (mode) {
         case SharingMode.GHOST:
           return false;
 
@@ -156,12 +156,13 @@ export class VisibilityService {
 
   private async computeAuthorizedViewers(ownerId: string): Promise<string[]> {
     const settings = await this.getSharingSettings(ownerId);
-    if (!settings || settings.mode === SharingMode.GHOST) return [];
+    const mode = settings?.mode ?? SharingMode.EVERYONE;
+    if (mode === SharingMode.GHOST) return [];
 
     const friendIds = await this.getAcceptedFriendIds(ownerId);
     if (friendIds.length === 0) return [];
 
-    switch (settings.mode) {
+    switch (mode) {
       case SharingMode.EVERYONE:
         return friendIds;
 

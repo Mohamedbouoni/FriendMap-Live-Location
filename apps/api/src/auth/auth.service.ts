@@ -33,7 +33,7 @@ export class AuthService {
         username,
         passwordHash,
         sharingSettings: {
-          create: { mode: 'GHOST' },
+          create: { mode: 'EVERYONE' },
         },
       },
       select: {

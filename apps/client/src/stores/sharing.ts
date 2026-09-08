@@ -4,7 +4,7 @@ import { apiRequest } from '../services/api';
 import type { SharingSettingsDto, SharingMode, SharingExceptionType } from '@friendmap/contracts';
 
 export const useSharingStore = defineStore('sharing', () => {
-  const mode = ref<SharingMode>('GHOST' as SharingMode);
+  const mode = ref<SharingMode>('EVERYONE' as SharingMode);
   const exceptions = ref<Array<{ friendId: string; friendUsername: string; type: SharingExceptionType }>>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);

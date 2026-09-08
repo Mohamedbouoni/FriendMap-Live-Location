@@ -46,7 +46,7 @@ model Friendship {
 // One row per user. Created at registration with GHOST default.
 model SharingSettings {
   userId String      @id
-  mode   SharingMode @default(GHOST)
+  mode   SharingMode @default(EVERYONE)
 
   user User @relation(fields: [userId], references: [id])
 }
