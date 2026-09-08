@@ -11,6 +11,9 @@ export const useSocketStore = defineStore('socket', () => {
   const friendLocations = ref<Record<string, FriendLocation>>({});
   const lastError = ref<string | null>(null);
 
+  /** Pending location to publish once socket connects */
+  let pendingLocation: { latitude: number; longitude: number; accuracy: number } | null = null;
+
   const locationsList = computed(() => Object.values(friendLocations.value));
 
   function subscribeMap() {
@@ -23,6 +26,11 @@ export const useSocketStore = defineStore('socket', () => {
     if (socket.value && connected.value) {
       socket.value.emit(WS_EVENTS.MAP_UNSUBSCRIBE);
     }
+  }
+
+  /** Force a fresh snapshot from the server (re-emits MAP_SUBSCRIBE) */
+  function requestSnapshot() {
+    subscribeMap();
   }
 
   function connect() {
@@ -41,6 +49,10 @@ export const useSocketStore = defineStore('socket', () => {
         token: authStore.token,
       },
       transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000,
     });
 
     socket.value.on('connect', () => {
@@ -48,13 +60,20 @@ export const useSocketStore = defineStore('socket', () => {
       lastError.value = null;
       // Subscribe to map updates upon connection
       subscribeMap();
+      // Flush any pending location that was queued before connection
+      flushPendingLocation();
     });
 
     socket.value.on('disconnect', () => {
       connected.value = false;
     });
 
+    // Auto-resubscribe on reconnect (socket.io fires 'connect' again on reconnect)
+    // The 'connect' handler above already handles this.
+
     socket.value.on(WS_EVENTS.MAP_SNAPSHOT, (payload: MapSnapshotPayload) => {
+      // Merge snapshot with existing locations to avoid flicker;
+      // snapshot is authoritative, so replace entirely
       const locMap: Record<string, FriendLocation> = {};
       for (const loc of payload.locations) {
         locMap[loc.userId] = loc;
@@ -75,6 +94,15 @@ export const useSocketStore = defineStore('socket', () => {
       friendLocations.value = updated;
     });
 
+    // When a friendship changes (accepted, removed, etc.), request a fresh snapshot
+    // so the new friend's location immediately appears on the map
+    socket.value.on(WS_EVENTS.FRIENDSHIP_CHANGED, () => {
+      // Small delay to let server-side visibility cache invalidate
+      setTimeout(() => {
+        requestSnapshot();
+      }, 500);
+    });
+
     socket.value.on(WS_EVENTS.ERROR, (err: { code: string; message: string }) => {
       lastError.value = err.message;
     });
@@ -91,13 +119,31 @@ export const useSocketStore = defineStore('socket', () => {
   }
 
   function publishLocation(latitude: number, longitude: number, accuracy: number) {
-    if (!socket.value || !connected.value) return;
+    if (!socket.value || !connected.value) {
+      // Queue the location for when the socket connects
+      pendingLocation = { latitude, longitude, accuracy };
+      return;
+    }
     socket.value.emit(WS_EVENTS.LOCATION_UPDATE, {
       latitude,
       longitude,
       accuracy,
       timestamp: Date.now(),
     });
+  }
+
+  /** Flush any pending location that was queued before socket connected */
+  function flushPendingLocation() {
+    if (pendingLocation && socket.value && connected.value) {
+      const { latitude, longitude, accuracy } = pendingLocation;
+      pendingLocation = null;
+      socket.value.emit(WS_EVENTS.LOCATION_UPDATE, {
+        latitude,
+        longitude,
+        accuracy,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   return {
@@ -110,6 +156,8 @@ export const useSocketStore = defineStore('socket', () => {
     disconnect,
     subscribeMap,
     unsubscribeMap,
+    requestSnapshot,
     publishLocation,
   };
 });
+

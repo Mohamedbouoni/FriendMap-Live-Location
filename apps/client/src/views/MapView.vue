@@ -221,6 +221,9 @@ const { currentCoords, geoError, permissionDenied, startTracking, stopTracking, 
 
 const hasLocation = computed(() => !!currentCoords.value);
 
+// Flag to fly the map to user's GPS location exactly once on first fix
+const hasInitiallyCentered = ref(false);
+
 const isSheetExpanded = ref(false);
 const selectedFriend = ref<FriendPosition | null>(null);
 
@@ -500,9 +503,28 @@ onMounted(async () => {
 
   if (!mapContainerRef.value) return;
 
-  // Initial center: user location or default San Francisco [lng, lat]
-  const initialLng = currentCoords.value?.longitude ?? -122.4194;
-  const initialLat = currentCoords.value?.latitude ?? 37.7749;
+  // Initial center: try user location, then localStorage cache, then world view
+  let initialLng = 0;
+  let initialLat = 20;
+  let initialZoom = 2;
+
+  if (currentCoords.value) {
+    initialLng = currentCoords.value.longitude;
+    initialLat = currentCoords.value.latitude;
+    initialZoom = 13;
+    hasInitiallyCentered.value = true;
+  } else {
+    // Try loading last-known position from localStorage
+    try {
+      const cached = localStorage.getItem('friendmap:lastPosition');
+      if (cached) {
+        const { lng, lat } = JSON.parse(cached);
+        initialLng = lng;
+        initialLat = lat;
+        initialZoom = 13;
+      }
+    } catch { /* ignore parse errors */ }
+  }
 
   // Point to local worker asset
   maplibregl.setWorkerUrl('/assets/maplibre-gl-worker.mjs');
@@ -512,7 +534,7 @@ onMounted(async () => {
     container: mapContainerRef.value,
     style: 'https://tiles.openfreemap.org/styles/liberty', // free, no API key, no rate limit
     center: [initialLng, initialLat], // [lng, lat]
-    zoom: 13,
+    zoom: initialZoom,
     attributionControl: false,
   });
 
@@ -564,11 +586,31 @@ onUnmounted(() => {
   }
 });
 
-// Watch current user GPS coords
+// Watch current user GPS coords — auto-center on first fix
 watch(
   () => currentCoords.value,
-  () => {
+  (coords) => {
     updateSelfMarker();
+    if (coords && !hasInitiallyCentered.value) {
+      hasInitiallyCentered.value = true;
+      // Save to localStorage for next session
+      try {
+        localStorage.setItem('friendmap:lastPosition', JSON.stringify({ lng: coords.longitude, lat: coords.latitude }));
+      } catch { /* ignore */ }
+      // Fly to user's actual location
+      if (map) {
+        map.flyTo({
+          center: [coords.longitude, coords.latitude],
+          zoom: 14,
+          essential: true,
+        });
+      }
+    } else if (coords) {
+      // Save position for next session even after first center
+      try {
+        localStorage.setItem('friendmap:lastPosition', JSON.stringify({ lng: coords.longitude, lat: coords.latitude }));
+      } catch { /* ignore */ }
+    }
   },
   { deep: true },
 );
