@@ -23,6 +23,9 @@ interface AuthenticatedSocket extends Socket {
   };
 }
 
+/** Interval (ms) between periodic snapshot pushes to subscribed clients */
+const SNAPSHOT_REFRESH_INTERVAL_MS = 30_000;
+
 @WebSocketGateway({
   cors: {
     origin: process.env.CLIENT_URL || 'http://localhost:8080',
@@ -36,6 +39,9 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   private readonly logger = new Logger(RealtimeGateway.name);
 
   private readonly clientTimestamps = new Map<string, number[]>();
+
+  /** Per-socket interval handles for periodic snapshot refresh */
+  private readonly snapshotIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -83,6 +89,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   handleDisconnect(client: AuthenticatedSocket) {
     this.clientTimestamps.delete(client.id);
+    this.clearSnapshotInterval(client.id);
     if (client.data?.userId) {
       this.logger.log(`WS Client disconnected: User ${client.data.username} (${client.data.userId})`);
     }
@@ -90,7 +97,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   /**
    * map:subscribe — Client subscribes to live map updates.
-   * Sends initial map:snapshot payload of all currently visible friend locations.
+   * Sends initial map:snapshot and starts periodic snapshot refresh every 30s.
+   * Re-calling subscribe is safe — it replaces the existing interval.
    */
   @SubscribeMessage(WS_EVENTS.MAP_SUBSCRIBE)
   async handleMapSubscribe(@ConnectedSocket() client: AuthenticatedSocket) {
@@ -100,8 +108,19 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     client.data.isSubscribedToMap = true;
     client.join(`map_subscribers:${userId}`);
 
-    const locations = await this.locationsService.getSnapshotForViewer(userId);
-    client.emit(WS_EVENTS.MAP_SNAPSHOT, { locations });
+    // Send immediate snapshot
+    await this.pushSnapshotToClient(client, userId);
+
+    // Start periodic snapshot refresh (clear any previous interval for this socket)
+    this.clearSnapshotInterval(client.id);
+    const intervalId = setInterval(async () => {
+      if (!client.connected || !client.data?.isSubscribedToMap) {
+        this.clearSnapshotInterval(client.id);
+        return;
+      }
+      await this.pushSnapshotToClient(client, userId);
+    }, SNAPSHOT_REFRESH_INTERVAL_MS);
+    this.snapshotIntervals.set(client.id, intervalId);
   }
 
   /**
@@ -114,6 +133,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     client.data.isSubscribedToMap = false;
     client.leave(`map_subscribers:${userId}`);
+    this.clearSnapshotInterval(client.id);
   }
 
   /**
@@ -162,15 +182,36 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
   }
 
+  // ─── Helper methods ────────────────────────────────────
+
+  /** Push a fresh MAP_SNAPSHOT to a single client */
+  private async pushSnapshotToClient(client: AuthenticatedSocket, userId: string) {
+    try {
+      const locations = await this.locationsService.getSnapshotForViewer(userId);
+      client.emit(WS_EVENTS.MAP_SNAPSHOT, { locations });
+    } catch (err) {
+      this.logger.error(`Failed to push snapshot to user ${userId}`, err);
+    }
+  }
+
+  /** Clear a client's periodic snapshot interval */
+  private clearSnapshotInterval(socketId: string) {
+    const interval = this.snapshotIntervals.get(socketId);
+    if (interval) {
+      clearInterval(interval);
+      this.snapshotIntervals.delete(socketId);
+    }
+  }
+
   /**
-   * Helper method to broadcast location update to specific viewer
+   * Broadcast location update to specific viewer
    */
   notifyLocationUpdated(viewerId: string, payload: Record<string, unknown>) {
     this.server.to(`user:${viewerId}`).emit(WS_EVENTS.LOCATION_UPDATED, payload);
   }
 
   /**
-   * Helper method to broadcast location removal event to specific viewer
+   * Broadcast location removal event to specific viewer
    */
   notifyLocationRemoved(viewerId: string, ownerUserId: string, reason: string) {
     this.server.to(`user:${viewerId}`).emit(WS_EVENTS.LOCATION_REMOVED, {
@@ -180,7 +221,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   /**
-   * Helper method to broadcast friendship changes
+   * Broadcast friendship changes
    */
   notifyFriendshipChanged(userId1: string, userId2: string, friendshipPayload: Record<string, unknown>) {
     this.server.to(`user:${userId1}`).to(`user:${userId2}`).emit(WS_EVENTS.FRIENDSHIP_CHANGED, friendshipPayload);

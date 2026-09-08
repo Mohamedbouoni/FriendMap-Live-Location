@@ -113,11 +113,11 @@ describe('VisibilityService — Central canViewerSeeOwner Authorization', () => 
     expect(result).toBe(true);
   });
 
-  it('9. Missing sharing settings record -> Defaults to GHOST mode (Returns FALSE)', async () => {
+  it('9. Missing sharing settings record -> Defaults to EVERYONE mode (Returns TRUE)', async () => {
     prismaMock.friendship.findFirst.mockResolvedValue({ status: 'ACCEPTED' });
     prismaMock.sharingSettings.findUnique.mockResolvedValue(null);
 
     const result = await visibilityService.canViewerSeeOwner('viewer-1', 'owner-1');
-    expect(result).toBe(false);
+    expect(result).toBe(true);
   });
 });
