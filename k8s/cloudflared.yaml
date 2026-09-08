@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflared-secret
+  namespace: friendmap
+type: Opaque
+stringData:
+  TUNNEL_TOKEN: "eyJhIjoiM2M0YTNjMzM5ZWUwNjMxYTQ3M2JlYzc4M2VlMDJkZDciLCJ0IjoiZGRhNGVmODktMzRlNi00MGM0LTgxNWMtMDg3ZjFlOTkwYzg2IiwicyI6IlkyRTVPR0U0T1RJdFlqVTFZaTAwTmpKbExXSXdPRFV0WVdZM09Ua3lOVEJoTjJJMSJ9"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: friendmap
+  labels:
+    app: cloudflared
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:latest
+          args:
+            - tunnel
+            - --no-autoupdate
+            - run
+            - --token
+            - $(TUNNEL_TOKEN)
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflared-secret
+                  key: TUNNEL_TOKEN
+          resources:
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
