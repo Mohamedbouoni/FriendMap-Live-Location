@@ -27,7 +27,7 @@
     </div>
 
     <!-- Map Area -->
-    <div class="card" style="overflow: hidden; margin-bottom: 20px; height: 420px; position: relative;">
+    <div class="card trail-map-card" style="overflow: hidden; margin-bottom: 20px; position: relative;">
       <div ref="trailMapContainer" style="width: 100%; height: 100%;"></div>
 
       <!-- Empty state overlay -->

@@ -1,6 +1,6 @@
 <template>
   <div class="app-shell">
-    <!-- Sidebar -->
+    <!-- Desktop Sidebar (Hidden on Mobile) -->
     <aside class="app-sidebar">
       <!-- Brand -->
       <div class="sidebar-brand">
@@ -64,10 +64,57 @@
       </div>
     </aside>
 
-    <!-- Main Content -->
-    <main class="app-content">
+    <!-- Mobile Top App Bar (Visible on mobile subpages) -->
+    <header v-if="!isOnMap" class="mobile-top-bar">
+      <div class="mobile-top-brand">
+        <div class="mobile-top-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <circle cx="12" cy="11" r="3" />
+          </svg>
+        </div>
+        <span class="mobile-top-title">{{ currentPageTitle }}</span>
+      </div>
+
+      <div class="mobile-top-actions">
+        <!-- Privacy Pill -->
+        <router-link to="/settings" class="mobile-privacy-chip">
+          <span class="mode-dot" :class="modeClass"></span>
+          <span>{{ modeLabelMap[sharingStore.mode] || 'Ghost' }}</span>
+        </router-link>
+
+        <!-- User initial / Logout dropdown -->
+        <div class="mobile-user-avatar" @click="handleLogout" title="Tap to sign out">
+          {{ userInitial }}
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-content" :class="{ 'is-on-map': isOnMap }">
       <router-view />
     </main>
+
+    <!-- Mobile Bottom Navigation Bar (Visible only on mobile <= 768px) -->
+    <nav class="mobile-bottom-nav">
+      <router-link
+        v-for="item in navItems"
+        :key="item.to"
+        :to="item.to"
+        class="mobile-nav-item"
+        :class="{ active: isActive(item.to) }"
+      >
+        <div class="mobile-nav-icon-wrap">
+          <span class="mobile-nav-icon" v-html="item.icon"></span>
+          <span
+            v-if="item.badge && item.badge > 0"
+            class="mobile-nav-badge"
+          >{{ item.badge }}</span>
+        </div>
+        <span class="mobile-nav-label">{{ item.label }}</span>
+        <div v-if="isActive(item.to)" class="mobile-nav-indicator"></div>
+      </router-link>
+    </nav>
   </div>
 </template>
 
@@ -90,6 +137,18 @@ onMounted(() => {
   if (authStore.isAuthenticated || authStore.token) {
     friendsStore.fetchFriendships();
     sharingStore.fetchSettings();
+  }
+});
+
+const isOnMap = computed(() => route.path === '/map' || route.path === '/');
+
+const currentPageTitle = computed(() => {
+  switch (route.path) {
+    case '/friends': return 'Friends';
+    case '/trail': return 'Your Trail';
+    case '/settings': return 'Settings';
+    case '/map': return 'Live Map';
+    default: return 'FriendMap';
   }
 });
 
