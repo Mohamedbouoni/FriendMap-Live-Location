@@ -13,9 +13,26 @@ export const useSocketStore = defineStore('socket', () => {
 
   const locationsList = computed(() => Object.values(friendLocations.value));
 
+  function subscribeMap() {
+    if (socket.value && connected.value) {
+      socket.value.emit(WS_EVENTS.MAP_SUBSCRIBE);
+    }
+  }
+
+  function unsubscribeMap() {
+    if (socket.value && connected.value) {
+      socket.value.emit(WS_EVENTS.MAP_UNSUBSCRIBE);
+    }
+  }
+
   function connect() {
     const authStore = useAuthStore();
-    if (!authStore.token || socket.value?.connected) return;
+    if (!authStore.token) return;
+
+    if (socket.value?.connected) {
+      subscribeMap();
+      return;
+    }
 
     const wsUrl = window.location.origin;
 
@@ -30,7 +47,7 @@ export const useSocketStore = defineStore('socket', () => {
       connected.value = true;
       lastError.value = null;
       // Subscribe to map updates upon connection
-      socket.value?.emit(WS_EVENTS.MAP_SUBSCRIBE);
+      subscribeMap();
     });
 
     socket.value.on('disconnect', () => {
@@ -91,6 +108,8 @@ export const useSocketStore = defineStore('socket', () => {
     lastError,
     connect,
     disconnect,
+    subscribeMap,
+    unsubscribeMap,
     publishLocation,
   };
 });

@@ -61,16 +61,49 @@
           class="friend-card anim-fade-in"
         >
           <div class="friend-info">
-            <div class="avatar avatar-md avatar-accent">
-              {{ item.friend.username.charAt(0) }}
+            <div class="avatar avatar-md avatar-accent" style="position: relative;">
+              {{ item.friend.username.charAt(0).toUpperCase() }}
+              <span
+                v-if="socketStore.friendLocations[item.friend.id]"
+                style="position: absolute; bottom: -2px; right: -2px; width: 12px; height: 12px; border-radius: 50%; background: #34C759; border: 2px solid white;"
+                title="Live on Map"
+              ></span>
             </div>
             <div>
-              <div class="friend-name">@{{ item.friend.username }}</div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="friend-name">@{{ item.friend.username }}</span>
+                <span
+                  v-if="socketStore.friendLocations[item.friend.id]"
+                  class="status-badge live"
+                  style="font-size: 9px; padding: 1px 6px;"
+                >
+                  LIVE
+                </span>
+                <span
+                  v-else
+                  class="status-badge offline"
+                  style="font-size: 9px; padding: 1px 6px;"
+                >
+                  OFFLINE
+                </span>
+              </div>
               <div class="friend-email">{{ item.friend.email }}</div>
             </div>
           </div>
 
           <div class="friend-actions">
+            <router-link
+              v-if="socketStore.friendLocations[item.friend.id]"
+              to="/map"
+              class="btn btn-sm btn-primary"
+              style="padding: 6px 10px; font-size: 11px;"
+              title="View friend on map"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="3 11 22 2 13 21 11 13 3 11" />
+              </svg>
+              Map
+            </router-link>
             <button
               v-if="friendsStore.isFriendHidden(item.friend.id)"
               @click="friendsStore.unhideFriendForSession(item.friend.id)"
@@ -196,12 +229,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useFriendsStore } from '../stores/friends';
+import { useSocketStore } from '../stores/socket';
 import { useAuthStore } from '../stores/auth';
 
 const friendsStore = useFriendsStore();
+const socketStore = useSocketStore();
 const authStore = useAuthStore();
+
+onMounted(() => {
+  socketStore.connect();
+  socketStore.subscribeMap();
+});
 
 const activeTab = ref<'friends' | 'requests' | 'add'>('friends');
 const searchQuery = ref('');

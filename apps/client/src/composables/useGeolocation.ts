@@ -1,14 +1,45 @@
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onUnmounted } from 'vue';
 import { useSocketStore } from '../stores/socket';
 
-export function useGeolocation(intervalMs = 10000) {
+export function useGeolocation(minIntervalMs = 5000) {
   const currentCoords = ref<{ latitude: number; longitude: number; accuracy: number } | null>(null);
   const isTracking = ref(false);
   const geoError = ref<string | null>(null);
+  const permissionDenied = ref(false);
   let watchId: number | null = null;
-  let timerId: any = null;
+  let lastBroadcastTime = 0;
 
   const socketStore = useSocketStore();
+
+  function handlePosition(pos: GeolocationPosition) {
+    const { latitude, longitude, accuracy } = pos.coords;
+    currentCoords.value = { latitude, longitude, accuracy };
+    geoError.value = null;
+    permissionDenied.value = false;
+
+    const now = Date.now();
+    // Throttle socket broadcasts to at most once per minIntervalMs (default 5s)
+    if (now - lastBroadcastTime >= minIntervalMs) {
+      lastBroadcastTime = now;
+      socketStore.publishLocation(latitude, longitude, accuracy);
+    }
+  }
+
+  function handleError(err: GeolocationPositionError) {
+    if (err.code === err.PERMISSION_DENIED) {
+      permissionDenied.value = true;
+      geoError.value = 'Location permission was denied. Please allow location access in your browser or phone settings to share and view live locations.';
+    } else if (err.code === err.POSITION_UNAVAILABLE) {
+      geoError.value = 'GPS / Location information is unavailable on your device. Please ensure device location is enabled.';
+    } else if (err.code === err.TIMEOUT) {
+      // If a position was already acquired, a timeout on a subsequent sample is non-critical
+      if (!currentCoords.value) {
+        geoError.value = 'Location request timed out. Searching for GPS signal…';
+      }
+    } else {
+      geoError.value = err.message || 'An unknown error occurred while retrieving location.';
+    }
+  }
 
   function startTracking() {
     if (!('geolocation' in navigator)) {
@@ -18,45 +49,44 @@ export function useGeolocation(intervalMs = 10000) {
 
     isTracking.value = true;
     geoError.value = null;
+    permissionDenied.value = false;
 
-    const publishCurrent = () => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude, accuracy } = pos.coords;
-          currentCoords.value = { latitude, longitude, accuracy };
-          geoError.value = null;
-
-          // Emit location to server via Socket.IO
-          socketStore.publishLocation(latitude, longitude, accuracy);
-        },
-        (err) => {
-          geoError.value = err.message;
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        },
-      );
+    const options: PositionOptions = {
+      enableHighAccuracy: true,
+      timeout: 20000,
+      maximumAge: 10000, // allow 10s cached fix for instant feedback on mobile
     };
 
-    // Immediate first publish
-    publishCurrent();
+    // Fast initial position attempt (allows cached cellular/wifi fix while satellite locks)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => handlePosition(pos),
+      (err) => handleError(err),
+      { ...options, maximumAge: 30000, timeout: 15000 },
+    );
 
-    // Recurring interval every 5-15s (default 10s)
-    timerId = setInterval(publishCurrent, intervalMs);
+    // Continuous watchPosition for live tracking on mobile
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+    }
+
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => handlePosition(pos),
+      (err) => handleError(err),
+      options,
+    );
   }
 
   function stopTracking() {
-    if (timerId) {
-      clearInterval(timerId);
-      timerId = null;
-    }
     if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId);
       watchId = null;
     }
     isTracking.value = false;
+  }
+
+  function retryTracking() {
+    stopTracking();
+    startTracking();
   }
 
   onUnmounted(() => {
@@ -67,7 +97,9 @@ export function useGeolocation(intervalMs = 10000) {
     currentCoords,
     isTracking,
     geoError,
+    permissionDenied,
     startTracking,
     stopTracking,
+    retryTracking,
   };
 }

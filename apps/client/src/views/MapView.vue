@@ -3,13 +3,44 @@
     <!-- MapLibre Map Container -->
     <div ref="mapContainerRef" class="map-container"></div>
 
-    <!-- Floating Status Bar (Top Left) -->
-    <div class="map-status-bar">
-      <div class="map-status-pill">
+    <!-- Floating Top Bar (Live Status & Privacy Mode) -->
+    <div class="map-floating-top">
+      <!-- Status Pill (Tap to toggle online friends drawer) -->
+      <button
+        class="map-status-pill clickable"
+        @click="toggleSheet"
+        :title="isSheetExpanded ? 'Close friends list' : 'View friends list and live status'"
+      >
         <span class="status-dot" :class="socketStore.connected ? 'live' : 'offline'"></span>
-        <span>{{ onlineFriendsCount }} friend{{ onlineFriendsCount !== 1 ? 's' : '' }} online</span>
-      </div>
+        <span class="status-pill-text">{{ liveFriendsCount }} / {{ totalFriendsCount }} live</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon" :class="{ 'is-open': isSheetExpanded }">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
+
+      <!-- Mobile Privacy Mode Chip -->
+      <router-link to="/settings" class="map-privacy-pill" title="Tap to change privacy mode">
+        <span class="mode-dot" :class="modeClass"></span>
+        <span class="privacy-pill-text">{{ modeLabelMap[sharingStore.mode] || 'Everyone' }}</span>
+      </router-link>
     </div>
+
+    <!-- Geolocation / GPS Alert Banner -->
+    <transition name="slide-up">
+      <div v-if="geoError" class="map-geo-banner">
+        <div class="map-geo-banner-content">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="geo-alert-icon">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span class="geo-alert-text">{{ geoError }}</span>
+        </div>
+        <button class="btn-geo-retry" @click="retryTracking">
+          Retry
+        </button>
+      </div>
+    </transition>
 
     <!-- Floating Recenter Button (Bottom Right) -->
     <div class="map-floating-controls">
@@ -19,12 +50,131 @@
         class="map-float-btn"
         :class="{ active: hasLocation }"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3" />
           <path d="M12 2v3m0 14v3M2 12h3m14 0h3" />
         </svg>
       </button>
     </div>
+
+    <!-- Selected Friend Quick Bottom Card (Mobile & Desktop) -->
+    <transition name="slide-up">
+      <div v-if="selectedFriend" class="friend-quick-card">
+        <div class="quick-card-header">
+          <div class="quick-card-user">
+            <div class="quick-card-avatar">{{ selectedFriend.initial }}</div>
+            <div>
+              <div class="quick-card-name">@{{ selectedFriend.username }}</div>
+              <div class="quick-card-sub">
+                <span class="status-badge" :class="isStale(selectedFriend.lastUpdated) ? 'stale' : 'live'">
+                  {{ isStale(selectedFriend.lastUpdated) ? 'STALE' : 'LIVE' }}
+                </span>
+                <span>{{ formatRelativeTime(selectedFriend.lastUpdated) }}</span>
+                <span class="accuracy-tag">±{{ selectedFriend.accuracy.toFixed(0) }}m</span>
+              </div>
+            </div>
+          </div>
+          <button class="quick-card-close" @click="selectedFriend = null" aria-label="Close">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <div class="quick-card-actions">
+          <button class="btn btn-sm btn-primary" @click="flyToFriend(selectedFriend)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+            Zoom to Friend
+          </button>
+          <button class="btn btn-sm btn-danger-outline" @click="hideSelectedFriend">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            Stop Viewing
+          </button>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Mobile Bottom Sheet for Friends & Presence -->
+    <transition name="sheet-slide">
+      <div v-if="isSheetExpanded" class="mobile-friends-sheet">
+        <div class="sheet-backdrop" @click="isSheetExpanded = false"></div>
+        <div class="sheet-panel">
+          <div class="sheet-drag-handle" @click="isSheetExpanded = false">
+            <div class="sheet-bar"></div>
+          </div>
+          <div class="sheet-header">
+            <div class="sheet-title-wrap">
+              <span class="sheet-title">Friends on Map</span>
+              <span class="sheet-badge">{{ liveFriendsCount }} active</span>
+            </div>
+            <button class="sheet-close-btn" @click="isSheetExpanded = false">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
+
+          <div class="sheet-list">
+            <!-- If user has no friends yet -->
+            <div v-if="totalFriendsCount === 0" class="sheet-empty">
+              <div class="sheet-empty-icon">👥</div>
+              <div class="sheet-empty-title">No friends yet</div>
+              <div class="sheet-empty-sub">Add friends from the Friends tab to see each other's live location!</div>
+              <router-link to="/friends" class="btn btn-sm btn-primary mt-3" @click="isSheetExpanded = false" style="margin-top: 12px; display: inline-flex;">
+                + Add Friends
+              </router-link>
+            </div>
+
+            <!-- If user has friends, but none are currently sharing -->
+            <div v-else-if="liveFriendsList.length === 0 && offlineFriendsList.length > 0" class="sheet-empty" style="padding: 16px 12px;">
+              <div class="sheet-empty-icon">📡</div>
+              <div class="sheet-empty-title">Waiting for friends' location</div>
+              <div class="sheet-empty-sub">Friends will appear live with coordinates as soon as their devices broadcast GPS.</div>
+            </div>
+
+            <!-- Live friends section -->
+            <div v-if="liveFriendsList.length > 0" class="sheet-section">
+              <div class="sheet-section-title">Sharing Live Location ({{ liveFriendsList.length }})</div>
+              <div
+                v-for="friend in liveFriendsList"
+                :key="friend.userId"
+                class="sheet-friend-item"
+                @click="flyToFriend(friend)"
+              >
+                <div class="sheet-friend-avatar">{{ friend.initial }}</div>
+                <div class="sheet-friend-info">
+                  <div class="sheet-friend-name">@{{ friend.username }}</div>
+                  <div class="sheet-friend-meta">
+                    <span class="status-badge" :class="isStale(friend.lastUpdated) ? 'stale' : 'live'">
+                      {{ isStale(friend.lastUpdated) ? 'STALE' : 'LIVE' }}
+                    </span>
+                    <span>{{ formatRelativeTime(friend.lastUpdated) }}</span>
+                    <span>• ±{{ friend.accuracy.toFixed(0) }}m</span>
+                  </div>
+                </div>
+                <button class="sheet-zoom-btn" title="Zoom to friend">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Not currently sharing section -->
+            <div v-if="offlineFriendsList.length > 0" class="sheet-section">
+              <div class="sheet-section-title">Not Sharing Currently ({{ offlineFriendsList.length }})</div>
+              <div
+                v-for="item in offlineFriendsList"
+                :key="item.friend.id"
+                class="sheet-friend-item is-offline"
+              >
+                <div class="sheet-friend-avatar avatar-offline">{{ item.friend.username.charAt(0).toUpperCase() }}</div>
+                <div class="sheet-friend-info">
+                  <div class="sheet-friend-name">@{{ item.friend.username }}</div>
+                  <div class="sheet-friend-meta">
+                    <span class="status-badge offline">NO GPS FIX</span>
+                    <span>Not broadcasting right now</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -66,11 +216,78 @@ const sharingStore = useSharingStore();
 const authStore = useAuthStore();
 const { isStale, formatRelativeTime } = useStaleDetection();
 
-// Geolocation composable — publishes position every 10 seconds
-const { currentCoords, startTracking } = useGeolocation(10000);
+// Geolocation composable — publishes position every 5 seconds
+const { currentCoords, geoError, permissionDenied, startTracking, stopTracking, retryTracking } = useGeolocation(5000);
 
 const hasLocation = computed(() => !!currentCoords.value);
-const onlineFriendsCount = computed(() => Object.keys(socketStore.friendLocations).length);
+
+const isSheetExpanded = ref(false);
+const selectedFriend = ref<FriendPosition | null>(null);
+
+const modeLabelMap: Record<string, string> = {
+  GHOST: 'Ghost',
+  EVERYONE: 'Everyone',
+  SELECTED: 'Selected',
+  EXCEPT: 'Except',
+};
+
+const modeClass = computed(() => {
+  switch (sharingStore.mode) {
+    case 'EVERYONE': return 'everyone';
+    case 'SELECTED': return 'selected';
+    case 'EXCEPT': return 'except';
+    case 'GHOST':
+    default: return 'ghost';
+  }
+});
+
+// Friends currently sharing live coordinates
+const liveFriendsList = computed<FriendPosition[]>(() => {
+  return Object.values(socketStore.friendLocations)
+    .filter((loc) => !friendsStore.isFriendHidden(loc.userId))
+    .map(toFriendPosition);
+});
+
+const liveFriendsCount = computed(() => liveFriendsList.value.length);
+const totalFriendsCount = computed(() => friendsStore.acceptedFriends.length);
+
+// Friends accepted but not currently broadcasting live coordinates
+const offlineFriendsList = computed(() => {
+  const liveUserIds = new Set(liveFriendsList.value.map((f) => f.userId));
+  return friendsStore.acceptedFriends.filter((item) => !liveUserIds.has(item.friend.id));
+});
+
+function toggleSheet() {
+  isSheetExpanded.value = !isSheetExpanded.value;
+  if (isSheetExpanded.value) {
+    selectedFriend.value = null;
+  }
+}
+
+function flyToFriend(friend: FriendPosition) {
+  selectedFriend.value = friend;
+  isSheetExpanded.value = false;
+  if (map) {
+    map.flyTo({
+      center: [friend.lng, friend.lat],
+      zoom: 15,
+      essential: true,
+    });
+  }
+}
+
+function hideSelectedFriend() {
+  if (selectedFriend.value) {
+    friendsStore.hideFriendForSession(selectedFriend.value.userId);
+    removeMarker(selectedFriend.value.userId);
+    selectedFriend.value = null;
+    if (activePopup) {
+      activePopup.remove();
+      activePopup = null;
+      activePopupUserId = null;
+    }
+  }
+}
 
 // ─── Friend Marker DOM Creation ──────────────────────────────
 function createMarkerEl(friend: FriendPosition): HTMLElement {
@@ -87,6 +304,9 @@ function createMarkerEl(friend: FriendPosition): HTMLElement {
 
 // ─── Friend Popup ────────────────────────────────────────────
 function openFriendPopup(friend: FriendPosition) {
+  selectedFriend.value = friend;
+  isSheetExpanded.value = false;
+
   if (!map) return;
 
   if (activePopup) {
@@ -269,8 +489,9 @@ function recenterOnSelf() {
 
 // ─── Lifecycle & Watchers ────────────────────────────────────
 onMounted(async () => {
-  // Connect WebSocket & fetch initial stores
+  // Connect WebSocket, subscribe to map snapshot, & fetch initial stores
   socketStore.connect();
+  socketStore.subscribeMap();
   friendsStore.fetchFriendships();
   sharingStore.fetchSettings();
 
@@ -313,25 +534,6 @@ onMounted(async () => {
     }
   });
 
-  // Attach direct Socket.IO event handlers for instant reaction (Ghost-mode fast-path)
-  if (socketStore.socket) {
-    socketStore.socket.on(WS_EVENTS.MAP_SNAPSHOT, (payload: MapSnapshotPayload) => {
-      clearAllFriendMarkers();
-      for (const loc of payload.locations) {
-        upsertMarker(toFriendPosition(loc));
-      }
-    });
-
-    socketStore.socket.on(WS_EVENTS.LOCATION_UPDATED, (payload: FriendLocation) => {
-      upsertMarker(toFriendPosition(payload));
-    });
-
-    socketStore.socket.on(WS_EVENTS.LOCATION_REMOVED, (payload: LocationRemovedPayload) => {
-      // Instant removal (<2s)
-      removeMarker(payload.userId);
-    });
-  }
-
   // Periodic stale-check every 5 seconds
   staleCheckInterval = setInterval(() => {
     for (const [userId, loc] of Object.entries(socketStore.friendLocations)) {
@@ -344,6 +546,9 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  stopTracking();
+  socketStore.unsubscribeMap();
+
   if (staleCheckInterval) {
     clearInterval(staleCheckInterval);
     staleCheckInterval = null;
