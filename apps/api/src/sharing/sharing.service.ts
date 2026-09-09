@@ -8,7 +8,12 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { VisibilityService } from '../common/visibility/visibility.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
-import { SharingMode, FriendshipStatus, SharingExceptionType } from '@friendmap/contracts';
+import {
+  SharingMode,
+  FriendshipStatus,
+  SharingExceptionType,
+  LocationRemovalReason,
+} from '@friendmap/contracts';
 import { ExceptionItemDto } from './dto/update-exceptions.dto';
 
 interface PrismaExceptionWithFriend {
@@ -164,30 +169,33 @@ export class SharingService {
     // 1. Viewers who lost access -> instantly remove marker
     const lostViewers = prevViewers.filter((v) => !newViewerSet.has(v));
     for (const viewerId of lostViewers) {
-      this.realtimeGateway.notifyLocationRemoved(viewerId, ownerUserId, 'PRIVACY_MODE_CHANGED');
+      this.realtimeGateway.notifyLocationRemoved(viewerId, ownerUserId, LocationRemovalReason.PRIVACY_MODE_CHANGED);
     }
 
-    // 2. Viewers who gained access -> immediately send latest location if available
+    // 2. Viewers who gained access -> send latest location ONLY if owner is currently ONLINE
     const gainedViewers = newViewers.filter((v) => !prevViewerSet.has(v));
     if (gainedViewers.length > 0) {
-      const loc = await this.redis.client.hGetAll(`friendmap:latest:${ownerUserId}`);
-      if (loc && loc.latitude && loc.longitude) {
-        const owner = await this.prisma.user.findUnique({
-          where: { id: ownerUserId },
-          select: { username: true },
-        });
+      const isOnline = await this.redis.isUserOnline(ownerUserId);
+      if (isOnline) {
+        const loc = await this.redis.getLatestLocation(ownerUserId);
+        if (loc) {
+          const owner = await this.prisma.user.findUnique({
+            where: { id: ownerUserId },
+            select: { username: true },
+          });
 
-        const payload = {
-          userId: ownerUserId,
-          username: owner?.username ?? '',
-          latitude: parseFloat(loc.latitude),
-          longitude: parseFloat(loc.longitude),
-          accuracy: parseFloat(loc.accuracy || '0'),
-          timestamp: parseInt(loc.timestamp || '0', 10),
-        };
+          const payload = {
+            userId: ownerUserId,
+            username: owner?.username ?? '',
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            accuracy: loc.accuracy,
+            timestamp: loc.timestamp,
+          };
 
-        for (const viewerId of gainedViewers) {
-          this.realtimeGateway.notifyLocationUpdated(viewerId, payload);
+          for (const viewerId of gainedViewers) {
+            this.realtimeGateway.notifyLocationUpdated(viewerId, payload);
+          }
         }
       }
     }

@@ -8,6 +8,7 @@ import { FriendshipsModule } from './friendships/friendships.module';
 import { SharingModule } from './sharing/sharing.module';
 import { LocationsModule } from './locations/locations.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { ChatModule } from './chat/chat.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
@@ -48,6 +49,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     SharingModule,
     LocationsModule,
     RealtimeModule,
+    ChatModule,
     HealthModule,
   ],
   providers: [

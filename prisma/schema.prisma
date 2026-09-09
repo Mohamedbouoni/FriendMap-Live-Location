@@ -21,6 +21,8 @@ model User {
   sharingExceptionsOwned  SharingException[] @relation("owner")
   sharingExceptionsFriend SharingException[] @relation("friend")
   locationHistory         LocationHistory[]
+  sentMessages            Message[]          @relation("sentMessages")
+  receivedMessages        Message[]          @relation("receivedMessages")
 }
 
 // ─── Friendship ──────────────────────────────────────
@@ -80,6 +82,27 @@ model LocationHistory {
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId, receivedAt])
+}
+
+// ─── Chat Messages ──────────────────────────────────
+model Message {
+  id              String    @id @default(uuid())
+  senderId        String
+  recipientId     String
+  participantKey  String    // sorted "userA:userB" for consistent conversation lookups
+  content         String
+  clientMessageId String?   // client-side idempotency key
+  createdAt       DateTime  @default(now())
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  deletedAt       DateTime? // soft delete
+
+  sender    User @relation("sentMessages", fields: [senderId], references: [id])
+  recipient User @relation("receivedMessages", fields: [recipientId], references: [id])
+
+  @@index([participantKey, createdAt])
+  @@index([recipientId, readAt])
+  @@index([senderId, createdAt])
 }
 
 // ─── Enums ──────────────────────────────────────────

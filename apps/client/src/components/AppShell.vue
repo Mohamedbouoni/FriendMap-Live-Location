@@ -77,6 +77,16 @@
       </div>
 
       <div class="mobile-top-actions">
+        <!-- Messages Button (Messenger / Instagram style) -->
+        <router-link to="/chat" class="mobile-messages-btn" title="Direct Messages">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span v-if="chatStore.totalUnreadCount > 0" class="mobile-msg-badge">
+            {{ chatStore.totalUnreadCount }}
+          </span>
+        </router-link>
+
         <!-- Privacy Pill -->
         <router-link to="/settings" class="mobile-privacy-chip">
           <span class="mode-dot" :class="modeClass"></span>
@@ -124,6 +134,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { useSharingStore } from '../stores/sharing';
 import { useFriendsStore } from '../stores/friends';
+import { useChatStore } from '../stores/chat';
 import { useSocketStore } from '../stores/socket';
 
 const route = useRoute();
@@ -131,6 +142,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 const sharingStore = useSharingStore();
 const friendsStore = useFriendsStore();
+const chatStore = useChatStore();
 const socketStore = useSocketStore();
 
 onMounted(() => {
@@ -143,6 +155,7 @@ onMounted(() => {
 const isOnMap = computed(() => route.path === '/map' || route.path === '/');
 
 const currentPageTitle = computed(() => {
+  if (route.path.startsWith('/chat')) return 'Messages';
   switch (route.path) {
     case '/friends': return 'Friends';
     case '/trail': return 'Your Trail';
@@ -164,6 +177,12 @@ const navItems = computed(() => [
     label: 'Friends',
     icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',
     badge: friendsStore.pendingRequests.length,
+  },
+  {
+    to: '/chat',
+    label: 'Messages',
+    icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>',
+    badge: chatStore.totalUnreadCount,
   },
   {
     to: '/trail',

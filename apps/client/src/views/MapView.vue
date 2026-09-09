@@ -18,6 +18,17 @@
         </svg>
       </button>
 
+      <!-- Messenger / Instagram DM Pill -->
+      <router-link to="/chat" class="map-chat-pill" title="Direct Messages">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <span>Messages</span>
+        <span v-if="chatStore.totalUnreadCount > 0" class="chat-pill-badge">
+          {{ chatStore.totalUnreadCount }}
+        </span>
+      </router-link>
+
       <!-- Mobile Privacy Mode Chip -->
       <router-link to="/settings" class="map-privacy-pill" title="Tap to change privacy mode">
         <span class="mode-dot" :class="modeClass"></span>
@@ -39,6 +50,20 @@
         <button class="btn-geo-retry" @click="retryTracking">
           Retry
         </button>
+      </div>
+    </transition>
+
+    <!-- Socket / Server Error Banner -->
+    <transition name="slide-up">
+      <div v-if="socketStore.lastError" class="map-geo-banner" style="background: rgba(220, 38, 38, 0.95);">
+        <div class="map-geo-banner-content">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="geo-alert-icon">
+            <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span class="geo-alert-text">{{ socketStore.lastError }}</span>
+        </div>
       </div>
     </transition>
 
@@ -83,6 +108,14 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
             Zoom to Friend
           </button>
+          <router-link
+            :to="'/chat/' + selectedFriend.userId"
+            class="btn btn-sm btn-secondary"
+            style="gap: 4px; display: inline-flex; align-items: center; text-decoration: none;"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            Chat
+          </router-link>
           <button class="btn btn-sm btn-danger-outline" @click="hideSelectedFriend">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
             Stop Viewing
@@ -147,9 +180,23 @@
                     <span>• ±{{ friend.accuracy.toFixed(0) }}m</span>
                   </div>
                 </div>
-                <button class="sheet-zoom-btn" title="Zoom to friend">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
-                </button>
+                <div class="sheet-actions" style="display: flex; gap: 6px; align-items: center;">
+                  <router-link
+                    :to="'/chat/' + friend.userId"
+                    class="btn btn-sm btn-secondary"
+                    style="padding: 5px 8px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; text-decoration: none;"
+                    @click.stop="isSheetExpanded = false"
+                    title="Direct Message"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    Chat
+                  </router-link>
+                  <button class="sheet-zoom-btn" title="Zoom to friend">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -158,17 +205,30 @@
               <div class="sheet-section-title">Not Sharing Currently ({{ offlineFriendsList.length }})</div>
               <div
                 v-for="item in offlineFriendsList"
-                :key="item.friend.id"
+                :key="item.friend?.id || item.id"
                 class="sheet-friend-item is-offline"
               >
-                <div class="sheet-friend-avatar avatar-offline">{{ item.friend.username.charAt(0).toUpperCase() }}</div>
+                <div class="sheet-friend-avatar avatar-offline">{{ (item.friend?.username || '?').charAt(0).toUpperCase() }}</div>
                 <div class="sheet-friend-info">
-                  <div class="sheet-friend-name">@{{ item.friend.username }}</div>
+                  <div class="sheet-friend-name">@{{ item.friend?.username }}</div>
                   <div class="sheet-friend-meta">
                     <span class="status-badge offline">NO GPS FIX</span>
                     <span>Not broadcasting right now</span>
                   </div>
                 </div>
+                <router-link
+                  v-if="item.friend?.id"
+                  :to="'/chat/' + item.friend.id"
+                  class="btn btn-sm btn-secondary"
+                  style="padding: 5px 8px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; text-decoration: none;"
+                  @click.stop="isSheetExpanded = false"
+                  title="Direct Message"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                  Chat
+                </router-link>
               </div>
             </div>
           </div>
@@ -188,6 +248,7 @@ import { useSocketStore } from '../stores/socket';
 import { useFriendsStore } from '../stores/friends';
 import { useSharingStore } from '../stores/sharing';
 import { useAuthStore } from '../stores/auth';
+import { useChatStore } from '../stores/chat';
 import { useStaleDetection } from '../composables/useStaleDetection';
 import { WS_EVENTS } from '@friendmap/contracts';
 import type { FriendLocation, MapSnapshotPayload, LocationRemovedPayload } from '@friendmap/contracts';
@@ -214,6 +275,7 @@ const socketStore = useSocketStore();
 const friendsStore = useFriendsStore();
 const sharingStore = useSharingStore();
 const authStore = useAuthStore();
+const chatStore = useChatStore();
 const { isStale, formatRelativeTime } = useStaleDetection();
 
 // Geolocation composable — publishes position every 5 seconds
@@ -257,7 +319,7 @@ const totalFriendsCount = computed(() => friendsStore.acceptedFriends.length);
 // Friends accepted but not currently broadcasting live coordinates
 const offlineFriendsList = computed(() => {
   const liveUserIds = new Set(liveFriendsList.value.map((f) => f.userId));
-  return friendsStore.acceptedFriends.filter((item) => !liveUserIds.has(item.friend.id));
+  return friendsStore.acceptedFriends.filter((item) => item?.friend?.id && !liveUserIds.has(item.friend.id));
 });
 
 function toggleSheet() {

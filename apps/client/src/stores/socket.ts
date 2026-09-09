@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from './auth';
+import { useChatStore } from './chat';
 import { WS_EVENTS } from '@friendmap/contracts';
 import type { FriendLocation, MapSnapshotPayload, LocationRemovedPayload } from '@friendmap/contracts';
 
@@ -62,6 +63,9 @@ export const useSocketStore = defineStore('socket', () => {
       subscribeMap();
       // Flush any pending location that was queued before connection
       flushPendingLocation();
+      // Initialize chat store listeners & load conversations
+      const chatStore = useChatStore();
+      chatStore.loadConversations();
     });
 
     socket.value.on('disconnect', () => {

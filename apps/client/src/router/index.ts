@@ -6,6 +6,7 @@ import MapView from '../views/MapView.vue';
 import FriendsPage from '../views/FriendsPage.vue';
 import TrailPage from '../views/TrailPage.vue';
 import SettingsPage from '../views/SettingsPage.vue';
+import ChatPage from '../views/ChatPage.vue';
 
 const routes = [
   {
@@ -28,6 +29,8 @@ const routes = [
       { path: '', redirect: '/map' },
       { path: 'map', name: 'Map', component: MapView },
       { path: 'friends', name: 'Friends', component: FriendsPage },
+      { path: 'chat', name: 'Chat', component: ChatPage },
+      { path: 'chat/:friendId', name: 'ChatDirect', component: ChatPage },
       { path: 'trail', name: 'Trail', component: TrailPage },
       { path: 'settings', name: 'Settings', component: SettingsPage },
     ],

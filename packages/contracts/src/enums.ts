@@ -26,4 +26,6 @@ export enum LocationRemovalReason {
   BLOCKED = 'blocked',
   UNFRIENDED = 'unfriended',
   SETTINGS_CHANGED = 'settings_changed',
+  OFFLINE = 'offline',
+  PRIVACY_MODE_CHANGED = 'privacy_mode_changed',
 }

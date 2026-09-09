@@ -10,7 +10,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { VisibilityService } from '../common/visibility/visibility.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
-import { FriendshipStatus } from '@friendmap/contracts';
+import { FriendshipStatus, LocationRemovalReason } from '@friendmap/contracts';
 
 interface UserSummary {
   id: string;
@@ -281,8 +281,8 @@ export class FriendshipsService {
     await this.visibilityService.invalidateUserViewerCache(friendship.addresseeId);
 
     // Remove live markers from both users' maps immediately (< 2s SLA)
-    this.realtimeGateway.notifyLocationRemoved(friendship.requesterId, friendship.addresseeId, 'FRIENDSHIP_REMOVED');
-    this.realtimeGateway.notifyLocationRemoved(friendship.addresseeId, friendship.requesterId, 'FRIENDSHIP_REMOVED');
+    this.realtimeGateway.notifyLocationRemoved(friendship.requesterId, friendship.addresseeId, LocationRemovalReason.UNFRIENDED);
+    this.realtimeGateway.notifyLocationRemoved(friendship.addresseeId, friendship.requesterId, LocationRemovalReason.UNFRIENDED);
 
     // Notify both clients of friendship status change
     this.realtimeGateway.notifyFriendshipChanged(friendship.requesterId, friendship.addresseeId, {
@@ -296,21 +296,25 @@ export class FriendshipsService {
   private async checkAndSendLocationAfterAccept(viewerId: string, ownerId: string) {
     const canSee = await this.visibilityService.canViewerSeeOwner(viewerId, ownerId);
     if (canSee) {
-      const loc = await this.redis.client.hGetAll(`friendmap:latest:${ownerId}`);
-      if (loc && loc.latitude && loc.longitude) {
-        const owner = await this.prisma.user.findUnique({
-          where: { id: ownerId },
-          select: { username: true },
-        });
+      // Only send location if owner is currently ONLINE
+      const isOnline = await this.redis.isUserOnline(ownerId);
+      if (isOnline) {
+        const loc = await this.redis.getLatestLocation(ownerId);
+        if (loc) {
+          const owner = await this.prisma.user.findUnique({
+            where: { id: ownerId },
+            select: { username: true },
+          });
 
-        this.realtimeGateway.notifyLocationUpdated(viewerId, {
-          userId: ownerId,
-          username: owner?.username ?? '',
-          latitude: parseFloat(loc.latitude),
-          longitude: parseFloat(loc.longitude),
-          accuracy: parseFloat(loc.accuracy || '0'),
-          timestamp: parseInt(loc.timestamp || '0', 10),
-        });
+          this.realtimeGateway.notifyLocationUpdated(viewerId, {
+            userId: ownerId,
+            username: owner?.username ?? '',
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            accuracy: loc.accuracy,
+            timestamp: loc.timestamp,
+          });
+        }
       }
     }
   }

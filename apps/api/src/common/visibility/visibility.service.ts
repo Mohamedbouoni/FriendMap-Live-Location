@@ -37,7 +37,7 @@ export class VisibilityService {
           return true;
 
         case SharingMode.SELECTED:
-          return this.isInAllowList(ownerId, viewerId);
+          return await this.isInAllowList(ownerId, viewerId);
 
         case SharingMode.EXCEPT:
           return !(await this.isInBlockList(ownerId, viewerId));

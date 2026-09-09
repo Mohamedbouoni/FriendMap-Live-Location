@@ -35,6 +35,12 @@ export function useGeolocation(minIntervalMs = 5000) {
       // If a position was already acquired, a timeout on a subsequent sample is non-critical
       if (!currentCoords.value) {
         geoError.value = 'Location request timed out. Searching for GPS signal…';
+        // Fallback to cellular / Wi-Fi triangulation for instant indoor fix on mobile
+        navigator.geolocation.getCurrentPosition(
+          (pos) => handlePosition(pos),
+          () => {},
+          { enableHighAccuracy: false, timeout: 10000 },
+        );
       }
     } else {
       geoError.value = err.message || 'An unknown error occurred while retrieving location.';

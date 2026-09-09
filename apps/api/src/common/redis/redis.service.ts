@@ -26,18 +26,97 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('Disconnected from Redis');
   }
 
-  // ─── Location helpers ────────────────────────────
-  async setLocation(userId: string, data: Record<string, unknown>, ttlSeconds: number): Promise<void> {
-    await this.client.set(`location:${userId}`, JSON.stringify(data), { EX: ttlSeconds });
+  // ─── Online Presence helpers ──────────────────────
+
+  /**
+   * Register an active socket for a user.
+   * Returns true if this is the user's first connection (user just came online).
+   */
+  async setUserOnline(userId: string, socketId: string): Promise<boolean> {
+    const socketKey = `presence:sockets:${userId}`;
+    const onlineSetKey = 'presence:online_users';
+
+    const pipeline = this.client.multi();
+    pipeline.sAdd(socketKey, socketId);
+    pipeline.sAdd(onlineSetKey, userId);
+    pipeline.sCard(socketKey);
+    const results = await pipeline.exec();
+
+    // results[2] is the cardinality after sAdd. If 1, user just transitioned to online.
+    const socketCount = (results?.[2] as number) || 1;
+    return socketCount === 1;
   }
 
-  async getLocation(userId: string): Promise<Record<string, unknown> | null> {
-    const raw = await this.client.get(`location:${userId}`);
-    return raw ? JSON.parse(raw) : null;
+  /**
+   * Deregister a socket for a user upon disconnect.
+   * Returns true if user has 0 active sockets left (user is now completely offline).
+   */
+  async setUserOffline(userId: string, socketId: string): Promise<boolean> {
+    const socketKey = `presence:sockets:${userId}`;
+    const onlineSetKey = 'presence:online_users';
+
+    await this.client.sRem(socketKey, socketId);
+    const remainingSockets = await this.client.sCard(socketKey);
+
+    if (remainingSockets === 0) {
+      const pipeline = this.client.multi();
+      pipeline.sRem(onlineSetKey, userId);
+      pipeline.del(socketKey);
+      await pipeline.exec();
+      return true; // Completely offline
+    }
+
+    return false; // Still has other active sockets
   }
 
-  async deleteLocation(userId: string): Promise<void> {
-    await this.client.del(`location:${userId}`);
+  /**
+   * Check if a specific user is currently online.
+   */
+  async isUserOnline(userId: string): Promise<boolean> {
+    return this.client.sIsMember('presence:online_users', userId);
+  }
+
+  /**
+   * Filter a list of user IDs to only those who are currently online.
+   */
+  async filterOnlineUsers(userIds: string[]): Promise<string[]> {
+    if (userIds.length === 0) return [];
+    const checks = await this.client.smIsMember('presence:online_users', userIds);
+    return userIds.filter((_, idx) => checks[idx]);
+  }
+
+  // ─── Latest Location helpers ──────────────────────
+
+  async setLatestLocation(
+    userId: string,
+    data: { latitude: number; longitude: number; accuracy: number; timestamp: number },
+    ttlSeconds: number,
+  ): Promise<void> {
+    const key = `friendmap:latest:${userId}`;
+    await this.client.hSet(key, {
+      latitude: data.latitude.toString(),
+      longitude: data.longitude.toString(),
+      accuracy: data.accuracy.toString(),
+      timestamp: data.timestamp.toString(),
+    });
+    await this.client.expire(key, ttlSeconds);
+  }
+
+  async getLatestLocation(
+    userId: string,
+  ): Promise<{ latitude: number; longitude: number; accuracy: number; timestamp: number } | null> {
+    const raw = await this.client.hGetAll(`friendmap:latest:${userId}`);
+    if (!raw || !raw.latitude || !raw.longitude) return null;
+    return {
+      latitude: parseFloat(raw.latitude),
+      longitude: parseFloat(raw.longitude),
+      accuracy: parseFloat(raw.accuracy || '0'),
+      timestamp: parseInt(raw.timestamp || '0', 10),
+    };
+  }
+
+  async deleteLatestLocation(userId: string): Promise<void> {
+    await this.client.del(`friendmap:latest:${userId}`);
   }
 
   // ─── Visibility cache helpers ────────────────────
@@ -88,5 +167,50 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     });
 
     return result === 1;
+  }
+
+  // ─── Chat unread count helpers ──────────────────────
+
+  /**
+   * Increment unread message count for recipient from a specific sender.
+   * Uses Redis hash: chat:unread:${recipientId} → { senderId: count }
+   */
+  async incrementUnreadCount(recipientId: string, senderId: string): Promise<number> {
+    return this.client.hIncrBy(`chat:unread:${recipientId}`, senderId, 1);
+  }
+
+  /**
+   * Reset unread count for a user from a specific friend (user read the chat).
+   */
+  async resetUnreadCount(userId: string, friendId: string): Promise<void> {
+    await this.client.hDel(`chat:unread:${userId}`, friendId);
+  }
+
+  /**
+   * Get unread count from a specific friend.
+   */
+  async getUnreadCount(userId: string, friendId: string): Promise<number> {
+    const count = await this.client.hGet(`chat:unread:${userId}`, friendId);
+    return count ? parseInt(count, 10) : 0;
+  }
+
+  /**
+   * Get all unread counts for a user. Returns { friendId: count } map.
+   */
+  async getAllUnreadCounts(userId: string): Promise<Record<string, number>> {
+    const raw = await this.client.hGetAll(`chat:unread:${userId}`);
+    const result: Record<string, number> = {};
+    for (const [friendId, count] of Object.entries(raw)) {
+      result[friendId] = parseInt(String(count), 10);
+    }
+    return result;
+  }
+
+  /**
+   * Get total unread message count across all chats.
+   */
+  async getTotalUnreadCount(userId: string): Promise<number> {
+    const counts = await this.getAllUnreadCounts(userId);
+    return Object.values(counts).reduce((sum, c) => sum + c, 0);
   }
 }

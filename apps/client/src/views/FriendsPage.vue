@@ -93,6 +93,17 @@
 
           <div class="friend-actions">
             <router-link
+              :to="'/chat/' + item.friend.id"
+              class="btn btn-sm btn-secondary"
+              style="padding: 6px 10px; font-size: 11px; gap: 4px; display: inline-flex; align-items: center;"
+              title="Chat with friend"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+              Chat
+            </router-link>
+            <router-link
               v-if="socketStore.friendLocations[item.friend.id]"
               to="/map"
               class="btn btn-sm btn-primary"

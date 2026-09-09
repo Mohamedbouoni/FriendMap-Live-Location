@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { VisibilityService } from '../common/visibility/visibility.service';
-import { speedKmh } from '../common/utils/haversine';
+import { speedKmh, haversineDistanceKm } from '../common/utils/haversine';
 import { PublishLocationDto } from './dto/publish-location.dto';
 
 @Injectable()
@@ -45,32 +45,29 @@ export class LocationsService {
     }
 
     // 2. Checks against last known location
-    const prevRaw = await this.redis.client.hGetAll(`friendmap:latest:${userId}`);
-    if (prevRaw && prevRaw.latitude && prevRaw.longitude && prevRaw.timestamp) {
-      const prevLat = parseFloat(prevRaw.latitude);
-      const prevLon = parseFloat(prevRaw.longitude);
-      const prevTs = parseInt(prevRaw.timestamp, 10);
-
+    const prev = await this.redis.getLatestLocation(userId);
+    if (prev) {
       // 2a. Out-of-order rejection
-      if (dto.timestamp <= prevTs) {
+      if (dto.timestamp <= prev.timestamp) {
         throw new BadRequestException(
           'Location timestamp must be newer than previously accepted update',
         );
       }
 
-      // 2b. Haversine Speed Check
+      // 2b. Haversine Speed Check (with GPS micro-jitter guard: > 50 meters)
+      const distKm = haversineDistanceKm(prev.latitude, prev.longitude, dto.latitude, dto.longitude);
       const calculatedSpeed = speedKmh(
-        prevLat,
-        prevLon,
-        prevTs,
+        prev.latitude,
+        prev.longitude,
+        prev.timestamp,
         dto.latitude,
         dto.longitude,
         dto.timestamp,
       );
 
-      if (calculatedSpeed > this.maxSpeedKmh) {
+      if (distKm > 0.05 && calculatedSpeed > this.maxSpeedKmh) {
         this.logger.warn(
-          `Speed check failed for user ${userId}: ${calculatedSpeed.toFixed(2)} km/h exceeds ${this.maxSpeedKmh} km/h`,
+          `Speed check failed for user ${userId}: ${calculatedSpeed.toFixed(2)} km/h exceeds ${this.maxSpeedKmh} km/h (dist: ${(distKm * 1000).toFixed(0)}m)`,
         );
         throw new BadRequestException(
           `Movement speed exceeds maximum allowed speed of ${this.maxSpeedKmh} km/h`,
@@ -79,14 +76,16 @@ export class LocationsService {
     }
 
     // 3. Fast Store in Redis
-    await this.redis.client.hSet(`friendmap:latest:${userId}`, {
-      latitude: dto.latitude.toString(),
-      longitude: dto.longitude.toString(),
-      accuracy: dto.accuracy.toString(),
-      timestamp: dto.timestamp.toString(),
-    });
-    // Set configured TTL on latest location key
-    await this.redis.client.expire(`friendmap:latest:${userId}`, this.locationTtlSec);
+    await this.redis.setLatestLocation(
+      userId,
+      {
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        accuracy: dto.accuracy,
+        timestamp: dto.timestamp,
+      },
+      this.locationTtlSec,
+    );
 
     // 4. Async Store in Postgres LocationHistory
     this.prisma.locationHistory
@@ -152,7 +151,7 @@ export class LocationsService {
   }
 
   /**
-   * Fetch snapshot of latest locations for all authorized visible friends of viewer.
+   * Fetch snapshot of latest locations for all authorized, currently ONLINE visible friends of viewer.
    */
   async getSnapshotForViewer(viewerId: string) {
     // 1. Find all accepted friends of viewer
@@ -169,29 +168,33 @@ export class LocationsService {
 
     if (friendIds.length === 0) return [];
 
-    // Batch fetch usernames for all friends
+    // 2. Only consider friends who are CURRENTLY ONLINE in Redis
+    const onlineFriendIds = await this.redis.filterOnlineUsers(friendIds);
+    if (onlineFriendIds.length === 0) return [];
+
+    // Batch fetch usernames for online friends
     const users = await this.prisma.user.findMany({
-      where: { id: { in: friendIds } },
+      where: { id: { in: onlineFriendIds } },
       select: { id: true, username: true },
     });
     const usernameMap = new Map(users.map((u: { id: string; username: string }) => [u.id, u.username]));
 
-    // 2. Parallelize visibility check and location fetching for all friends
+    // 3. Parallelize visibility check and location fetching for online friends
     const results = await Promise.all(
-      friendIds.map(async (friendId: string) => {
+      onlineFriendIds.map(async (friendId: string) => {
         const canSee = await this.visibilityService.canViewerSeeOwner(viewerId, friendId);
         if (!canSee) return null;
 
-        const loc = await this.redis.client.hGetAll(`friendmap:latest:${friendId}`);
-        if (!loc || !loc.latitude || !loc.longitude) return null;
+        const loc = await this.redis.getLatestLocation(friendId);
+        if (!loc) return null;
 
         return {
           userId: friendId,
           username: usernameMap.get(friendId) ?? '',
-          latitude: parseFloat(loc.latitude),
-          longitude: parseFloat(loc.longitude),
-          accuracy: parseFloat(loc.accuracy || '0'),
-          timestamp: parseInt(loc.timestamp || '0', 10),
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          accuracy: loc.accuracy,
+          timestamp: loc.timestamp,
         };
       }),
     );

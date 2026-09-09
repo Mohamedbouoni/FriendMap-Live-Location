@@ -1113,7 +1113,8 @@ img {
 }
 
 .map-status-pill,
-.map-privacy-pill {
+.map-privacy-pill,
+.map-chat-pill {
   pointer-events: auto;
   display: flex;
   align-items: center;
@@ -1130,6 +1131,32 @@ img {
   color: var(--color-text);
   text-decoration: none;
   transition: all 0.2s var(--ease-out);
+  position: relative;
+}
+
+.map-chat-pill:hover {
+  background: #FFFFFF;
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-1px);
+  color: var(--color-primary);
+}
+
+.map-chat-pill .chat-pill-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #3b82f6;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 17px;
+  height: 17px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
 }
 
 .map-status-pill.clickable {
@@ -1716,6 +1743,40 @@ img {
 }
 .mobile-privacy-chip:hover {
   background: rgba(255, 255, 255, 0.18);
+}
+
+.mobile-messages-btn {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.1);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: all 0.2s var(--ease-out);
+}
+.mobile-messages-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.mobile-messages-btn .mobile-msg-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  background: #3b82f6;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
 }
 
 .mobile-user-avatar {

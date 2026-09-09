@@ -120,3 +120,87 @@ export interface WsErrorPayload {
   code: string;
   message: string;
 }
+
+// ─── Chat ────────────────────────────────────────────
+
+/** Client → Server: send a chat message */
+export interface ChatSendPayload {
+  recipientId: string;
+  content: string;
+  clientMessageId?: string; // client-side idempotency key
+}
+
+/** Server → Client: a new chat message */
+export interface ChatMessagePayload {
+  id: string;
+  senderId: string;
+  senderUsername: string;
+  recipientId: string;
+  content: string;
+  createdAt: string; // ISO 8601
+  clientMessageId?: string;
+}
+
+/** Bidirectional: typing indicator */
+export interface ChatTypingPayload {
+  userId: string;
+  username: string;
+}
+
+/** Client → Server: mark messages as read */
+export interface ChatReadPayload {
+  friendId: string;
+  lastReadMessageId: string;
+}
+
+/** Server → Client: read receipt acknowledgement */
+export interface ChatReadAckPayload {
+  userId: string; // the user who read the messages
+  lastReadMessageId: string;
+}
+
+/** Server → Client: delivery confirmation */
+export interface ChatDeliveredPayload {
+  messageId: string;
+}
+
+/** Client → Server: delete a message */
+export interface ChatDeletePayload {
+  messageId: string;
+}
+
+/** Server → Client: message was deleted */
+export interface ChatDeletedPayload {
+  messageId: string;
+  deletedBy: string;
+}
+
+/** Client → Server: request message history */
+export interface ChatHistoryRequest {
+  friendId: string;
+  cursor?: string; // message ID for cursor-based pagination
+  limit?: number;  // default 50
+}
+
+/** Server → Client: paginated message history */
+export interface ChatHistoryResponse {
+  messages: ChatMessagePayload[];
+  hasMore: boolean;
+  nextCursor?: string;
+}
+
+/** A conversation summary for the conversation list */
+export interface ChatConversationDto {
+  friendId: string;
+  friendUsername: string;
+  lastMessage: string;
+  lastMessageAt: string; // ISO 8601
+  unreadCount: number;
+  isOnline: boolean;
+}
+
+/** Server → Client: full conversations list */
+export interface ChatConversationsResponse {
+  conversations: ChatConversationDto[];
+}
+
